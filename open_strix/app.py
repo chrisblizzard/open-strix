@@ -37,6 +37,7 @@ from .config import (
     load_config,
 )
 from .mcp_client import MCPManager
+from .phone_book import load_phone_book
 from .discord import (
     DISCORD_HISTORY_REFRESH_LIMIT,
     DISCORD_MESSAGE_CHAR_LIMIT,
@@ -324,6 +325,7 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin):
         self._send_message_circuit_breaker_active = False
         self._send_message_warning_reaction_sent = False
 
+        self.phone_book = load_phone_book(self.layout.phone_book_file)
         self.mcp_manager: MCPManager | None = None
         self.agent = self._create_agent()
 
