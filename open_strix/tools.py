@@ -7,7 +7,6 @@ import json
 import os
 import re
 import subprocess
-import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -200,43 +199,6 @@ def _run_shell(command: str, timeout_seconds: int) -> subprocess.CompletedProces
         check=False,
         timeout=timeout_seconds,
     )
-
-
-def _background_shell_command(command: str, output_file: str) -> list[str]:
-    """Build a shell command that runs *command*, tees all output to *output_file*,
-    and appends the exit code on completion."""
-    if os.name == "nt":
-        # PowerShell: run in a script block, capture exit code.
-        ps_script = (
-            f"& {{ {command} }} 2>&1 | Tee-Object -FilePath '{output_file}'; "
-            f"Add-Content -Path '{output_file}' -Value \"`nEXIT_CODE=$LASTEXITCODE\""
-        )
-        return [
-            "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-            "-Command", ps_script,
-        ]
-    # Bash: subshell captures both stdout and stderr, tees to file,
-    # then appends the original exit code.
-    bash_script = (
-        f'( {command} ) 2>&1 | tee "{output_file}"; '
-        f'echo "EXIT_CODE=${{PIPESTATUS[0]}}" >> "{output_file}"'
-    )
-    return ["bash", "-lc", bash_script]
-
-
-def _notify_event_queue(api_port: int, prompt: str, source: str) -> None:
-    """POST a completion event to the agent's loopback API.  Best-effort; failures are silenced."""
-    try:
-        payload = json.dumps({"prompt": prompt, "source": source}).encode("utf-8")
-        req = Request(
-            f"http://127.0.0.1:{api_port}/api/event",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        urlopen(req, timeout=5)
-    except Exception:
-        pass  # best-effort; if API is down the agent can still poll the file
 
 
 class ToolsMixin:
@@ -662,102 +624,6 @@ class ToolsMixin:
                 command_preview=normalized_command[:200],
             )
             return f"[exit_code={completed.returncode}]\n{combined}"
-
-        @tool("run_in_background")
-        async def run_in_background(
-            command: str,
-            label: str = "",
-            notify_prompt: str = "",
-        ) -> str:
-            """Launch a long-running shell command in the background.
-
-            The command runs detached — this tool returns immediately with the
-            path to an output file that captures all stdout/stderr via ``|& tee``.
-
-            When the command finishes, a completion event is posted to the
-            agent's event queue (if the loopback API is enabled) so you can
-            react to success or failure.  The output file persists regardless.
-
-            Args:
-                command: The shell command to run.
-                label: Short human-readable label for logs (e.g. "cargo build").
-                notify_prompt: Prompt text sent to the event queue on completion.
-                    Defaults to a message telling you to check the output file.
-            """
-            normalized_command = command.strip()
-            if not normalized_command:
-                return "command is required."
-
-            safe_label = re.sub(r"[^A-Za-z0-9_-]", "-", label.strip()[:60]) if label else "job"
-            stamp = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")
-            output_dir = self.home / "logs"
-            output_dir.mkdir(parents=True, exist_ok=True)
-            output_file = output_dir / f"bg-{stamp}-{safe_label}.log"
-
-            shell_argv = _background_shell_command(normalized_command, str(output_file))
-
-            try:
-                proc = await asyncio.to_thread(
-                    lambda: subprocess.Popen(  # noqa: S603
-                        shell_argv,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        stdin=subprocess.DEVNULL,
-                    ),
-                )
-            except FileNotFoundError:
-                return f"{_shell_tool_name()} is not available on this machine."
-
-            api_port = getattr(getattr(self, "config", None), "api_port", 0)
-
-            async def _wait_and_notify() -> None:
-                exit_code = await asyncio.to_thread(proc.wait)
-                self.log_event(
-                    "background_job_finished",
-                    label=safe_label,
-                    exit_code=exit_code,
-                    output_file=str(output_file),
-                    command_preview=normalized_command[:200],
-                )
-                if api_port and api_port > 0:
-                    prompt_text = notify_prompt.strip() if notify_prompt else (
-                        f'Background job "{safe_label}" finished with exit code {exit_code}. '
-                        f"Check the output file at {output_file} "
-                        f'(hint: read the last ~50 lines, and look for "EXIT_CODE=" at the end).'
-                    )
-                    await asyncio.to_thread(
-                        _notify_event_queue,
-                        api_port=api_port,
-                        prompt=prompt_text,
-                        source=f"background-job:{safe_label}",
-                    )
-
-            asyncio.create_task(_wait_and_notify())  # fire-and-forget
-
-            self.log_event(
-                "tool_call",
-                tool="run_in_background",
-                label=safe_label,
-                pid=proc.pid,
-                output_file=str(output_file),
-                api_port=api_port,
-                command_preview=normalized_command[:200],
-            )
-            parts = [
-                f"Background job launched (pid={proc.pid}).",
-                f"Output file: {output_file}",
-                f"All stdout/stderr is being teed to that file in real time.",
-            ]
-            if api_port and api_port > 0:
-                parts.append(
-                    "A completion event will be posted to your event queue when it finishes."
-                )
-            else:
-                parts.append(
-                    "No loopback API is configured (api_port=0), so no completion callback will fire. "
-                    "Poll the output file and look for EXIT_CODE= at the end to detect completion."
-                )
-            return "\n".join(parts)
 
         @tool("fetch_url")
         async def fetch_url(
@@ -1204,7 +1070,6 @@ class ToolsMixin:
         send_message.handle_tool_error = True
         list_messages.handle_tool_error = True
         run_shell_tool.handle_tool_error = True
-        run_in_background.handle_tool_error = True
         fetch_url.handle_tool_error = True
 
         tools: list[Any] = [
@@ -1213,7 +1078,6 @@ class ToolsMixin:
             list_messages,
             lookup,
             run_shell_tool,
-            run_in_background,
             fetch_url,
             journal,
             list_memory_blocks,
