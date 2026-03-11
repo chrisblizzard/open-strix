@@ -212,8 +212,13 @@ class WebChatMixin:
         return candidate
 
 
+def _web_agent_name(strix: OpenStrixApp) -> str:
+    return strix.config.name or strix.home.name
+
+
 def _render_web_ui_page(strix: OpenStrixApp) -> str:
-    agent_name_json = json.dumps(strix.home.name)
+    agent_name = _web_agent_name(strix)
+    agent_name_json = json.dumps(agent_name)
     channel_id_json = json.dumps(strix.config.web_ui_channel_id)
     return """<!doctype html>
 <html lang="en">
@@ -519,13 +524,13 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
       </header>
 
       <section class="messages" id="messages" aria-live="polite">
-        <div class="empty">No messages yet. Say something and open-strix will respond here.</div>
+        <div class="empty">No messages yet. Say something and {agent_name} will respond here.</div>
       </section>
 
       <section class="composer">
         <form class="composer-form" id="composer">
           <div class="typing-indicator" id="typing-indicator"></div>
-          <textarea id="text" name="text" placeholder="Message open-strix..."></textarea>
+          <textarea id="text" name="text" placeholder="Message {agent_name}..."></textarea>
           <div class="composer-actions">
             <label class="file-label">
               <input id="files" type="file" name="files" multiple />
@@ -678,7 +683,7 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
           if (!emptyEl) {{
             const empty = document.createElement("div");
             empty.className = "empty";
-            empty.textContent = "No messages yet. Say something and open-strix will respond here.";
+            empty.textContent = "No messages yet. Say something and " + AGENT_NAME + " will respond here.";
             messagesEl.appendChild(empty);
           }}
           return;
@@ -826,7 +831,7 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
   </body>
 </html>
 """.format(
-        agent_name=strix.home.name,
+        agent_name=agent_name,
         agent_name_json=agent_name_json,
         channel_id=strix.config.web_ui_channel_id,
         channel_id_json=channel_id_json,
@@ -854,7 +859,7 @@ def _build_web_ui_app(strix: OpenStrixApp) -> web.Application:
         messages, has_more = strix.serialize_web_messages(limit=limit, before=before)
         return web.json_response(
             {
-                "agent_name": strix.home.name,
+                "agent_name": _web_agent_name(strix),
                 "channel_id": strix.config.web_ui_channel_id,
                 "is_processing": strix.current_channel_id == strix.config.web_ui_channel_id,
                 "messages": messages,

@@ -177,6 +177,7 @@ class RepoLayout:
 @dataclass
 class AppConfig:
     model: str = DEFAULT_MODEL
+    name: str = ""
     journal_entries_in_prompt: int = 90
     discord_messages_in_prompt: int = 10
     discord_token_env: str = "DISCORD_TOKEN"
@@ -243,6 +244,7 @@ def load_config(layout: RepoLayout) -> AppConfig:
         model = DEFAULT_MODEL
     return AppConfig(
         model=model,
+        name=str(loaded.get("name", "")).strip(),
         journal_entries_in_prompt=int(loaded.get("journal_entries_in_prompt", 90)),
         discord_messages_in_prompt=int(loaded.get("discord_messages_in_prompt", 10)),
         discord_token_env=str(loaded.get("discord_token_env", "DISCORD_TOKEN")),

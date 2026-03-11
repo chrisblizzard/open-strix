@@ -1,15 +1,22 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
+import json
 from pathlib import Path
 
 from aiohttp import FormData
+from aiohttp.test_utils import make_mocked_request
 import pytest
 
 from open_strix.config import AppConfig, RepoLayout
 from open_strix.discord import DiscordMixin
 from open_strix.models import AgentEvent
-from open_strix.web_ui import WebChatMixin, _build_web_ui_app
+from open_strix.web_ui import (
+    WebChatMixin,
+    _build_web_ui_app,
+    _render_web_ui_page,
+    _web_agent_name,
+)
 
 
 class DummyStrix(DiscordMixin, WebChatMixin):
@@ -35,6 +42,13 @@ class DummyStrix(DiscordMixin, WebChatMixin):
 
     async def enqueue_event(self, event: AgentEvent) -> None:
         self.enqueued.append(event)
+
+
+def _get_route_handler(app, path: str, method: str):
+    for route in app.router.routes():
+        if route.method == method and getattr(route.resource, "canonical", None) == path:
+            return route.handler
+    raise AssertionError(f"missing {method} route for {path}")
 
 
 @pytest.mark.asyncio
@@ -111,3 +125,42 @@ async def test_local_web_send_and_react_round_trip(tmp_path: Path) -> None:
 
     resolved = strix.resolve_web_shared_file("state/summary.txt")
     assert resolved == shared_file.resolve()
+
+
+@pytest.mark.asyncio
+async def test_web_ui_uses_configured_display_name(tmp_path: Path) -> None:
+    strix = DummyStrix(tmp_path / "atlas")
+    strix.config.name = "Keel"
+
+    page = _render_web_ui_page(strix)
+    assert _web_agent_name(strix) == "Keel"
+    assert "<title>Keel Chat</title>" in page
+    assert "No messages yet. Say something and Keel will respond here." in page
+    assert 'placeholder="Message Keel..."' in page
+
+    app = _build_web_ui_app(strix)
+    request = make_mocked_request("GET", "/api/messages", app=app)
+    handler = _get_route_handler(app, "/api/messages", "GET")
+    messages_response = await handler(request)
+    assert messages_response.status == 200
+    messages_body = json.loads(messages_response.text)
+    assert messages_body["agent_name"] == "Keel"
+
+
+@pytest.mark.asyncio
+async def test_web_ui_falls_back_to_home_name_when_display_name_missing(tmp_path: Path) -> None:
+    strix = DummyStrix(tmp_path / "atlas")
+
+    page = _render_web_ui_page(strix)
+    assert _web_agent_name(strix) == "atlas"
+    assert "<title>atlas Chat</title>" in page
+    assert "No messages yet. Say something and atlas will respond here." in page
+    assert 'placeholder="Message atlas..."' in page
+
+    app = _build_web_ui_app(strix)
+    request = make_mocked_request("GET", "/api/messages", app=app)
+    handler = _get_route_handler(app, "/api/messages", "GET")
+    messages_response = await handler(request)
+    assert messages_response.status == 200
+    messages_body = json.loads(messages_response.text)
+    assert messages_body["agent_name"] == "atlas"
