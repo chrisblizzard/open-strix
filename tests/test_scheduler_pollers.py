@@ -63,14 +63,14 @@ class TestDiscoverPollers:
     def test_valid_pollers_json(self, tmp_home: Path) -> None:
         skill_dir = tmp_home / "skills" / "bluesky"
         skill_dir.mkdir(parents=True)
-        (skill_dir / "pollers.json").write_text(json.dumps([
+        (skill_dir / "pollers.json").write_text(json.dumps({"pollers": [
             {
                 "name": "bluesky-mentions",
                 "command": "python poller.py",
                 "cron": "*/5 * * * *",
                 "env": {"BLUESKY_HANDLE": "test.bsky.social"},
             }
-        ]))
+        ]}))
 
         app = FakeApp(tmp_home)
         pollers = app._discover_pollers()
@@ -84,10 +84,10 @@ class TestDiscoverPollers:
     def test_multiple_pollers_in_one_file(self, tmp_home: Path) -> None:
         skill_dir = tmp_home / "skills" / "monitoring"
         skill_dir.mkdir(parents=True)
-        (skill_dir / "pollers.json").write_text(json.dumps([
+        (skill_dir / "pollers.json").write_text(json.dumps({"pollers": [
             {"name": "check-a", "command": "python a.py", "cron": "*/10 * * * *"},
             {"name": "check-b", "command": "python b.py", "cron": "0 * * * *"},
-        ]))
+        ]}))
 
         app = FakeApp(tmp_home)
         pollers = app._discover_pollers()
@@ -99,9 +99,9 @@ class TestDiscoverPollers:
         for name in ["alpha", "beta"]:
             skill_dir = tmp_home / "skills" / name
             skill_dir.mkdir(parents=True)
-            (skill_dir / "pollers.json").write_text(json.dumps([
+            (skill_dir / "pollers.json").write_text(json.dumps({"pollers": [
                 {"name": f"{name}-poller", "command": f"python {name}.py", "cron": "*/5 * * * *"}
-            ]))
+            ]}))
 
         app = FakeApp(tmp_home)
         pollers = app._discover_pollers()
@@ -119,24 +119,35 @@ class TestDiscoverPollers:
         assert pollers == []
         assert any(e["type"] == "poller_invalid_json" for e in app.events)
 
-    def test_not_array(self, tmp_home: Path) -> None:
+    def test_bare_array_rejected(self, tmp_home: Path) -> None:
+        """Top-level must be a dict, not an array."""
         skill_dir = tmp_home / "skills" / "bad"
         skill_dir.mkdir(parents=True)
-        (skill_dir / "pollers.json").write_text(json.dumps({"name": "x"}))
+        (skill_dir / "pollers.json").write_text(json.dumps([{"name": "x"}]))
 
         app = FakeApp(tmp_home)
         pollers = app._discover_pollers()
         assert pollers == []
         assert any(e["type"] == "poller_invalid_format" for e in app.events)
 
+    def test_dict_without_pollers_key(self, tmp_home: Path) -> None:
+        """Dict without 'pollers' key yields no pollers (empty list from .get)."""
+        skill_dir = tmp_home / "skills" / "nokey"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "pollers.json").write_text(json.dumps({"name": "x"}))
+
+        app = FakeApp(tmp_home)
+        pollers = app._discover_pollers()
+        assert pollers == []
+
     def test_missing_required_fields(self, tmp_home: Path) -> None:
         skill_dir = tmp_home / "skills" / "incomplete"
         skill_dir.mkdir(parents=True)
-        (skill_dir / "pollers.json").write_text(json.dumps([
+        (skill_dir / "pollers.json").write_text(json.dumps({"pollers": [
             {"name": "missing-command"},
             {"command": "python x.py", "cron": "* * * * *"},  # missing name
             {"name": "ok", "command": "python ok.py", "cron": "*/5 * * * *"},
-        ]))
+        ]}))
 
         app = FakeApp(tmp_home)
         pollers = app._discover_pollers()
@@ -146,9 +157,9 @@ class TestDiscoverPollers:
     def test_no_env_defaults_empty(self, tmp_home: Path) -> None:
         skill_dir = tmp_home / "skills" / "minimal"
         skill_dir.mkdir(parents=True)
-        (skill_dir / "pollers.json").write_text(json.dumps([
+        (skill_dir / "pollers.json").write_text(json.dumps({"pollers": [
             {"name": "simple", "command": "echo hi", "cron": "*/5 * * * *"}
-        ]))
+        ]}))
 
         app = FakeApp(tmp_home)
         pollers = app._discover_pollers()

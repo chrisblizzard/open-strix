@@ -105,15 +105,24 @@ class SchedulerMixin:
                 )
                 continue
 
-            if not isinstance(raw, list):
+            if isinstance(raw, dict):
+                entries = raw.get("pollers", [])
+                if not isinstance(entries, list):
+                    self.log_event(
+                        "poller_invalid_format",
+                        path=str(pollers_file),
+                        error="'pollers' key must be an array",
+                    )
+                    continue
+            else:
                 self.log_event(
                     "poller_invalid_format",
                     path=str(pollers_file),
-                    error="expected a JSON array",
+                    error="expected a JSON object with 'pollers' key",
                 )
                 continue
 
-            for entry in raw:
+            for entry in entries:
                 if not isinstance(entry, dict):
                     continue
                 name = str(entry.get("name", "")).strip()
