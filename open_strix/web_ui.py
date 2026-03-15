@@ -479,7 +479,7 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
       textarea {{
         width: 100%;
         min-height: 3.2rem;
-        max-height: 40vh;
+        max-height: 25vh;
         resize: none;
         overflow-y: auto;
         border-radius: 1rem;
@@ -841,8 +841,11 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
       }}
 
       function autoResize() {{
+        textEl.style.overflow = "hidden";
         textEl.style.height = "auto";
         textEl.style.height = textEl.scrollHeight + "px";
+        textEl.style.overflow = "";
+        if (isNearBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
       }}
       textEl.addEventListener("input", autoResize);
 
