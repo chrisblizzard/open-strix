@@ -478,8 +478,10 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
 
       textarea {{
         width: 100%;
-        min-height: 6.5rem;
-        resize: vertical;
+        min-height: 3.2rem;
+        max-height: 40vh;
+        resize: none;
+        overflow-y: auto;
         border-radius: 1rem;
         border: 1px solid rgba(30, 36, 48, 0.16);
         padding: 0.9rem 1rem;
@@ -824,6 +826,7 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
             throw new Error(payload.error || "message send failed");
           }}
           textEl.value = "";
+          textEl.style.height = "auto";
           filesEl.value = "";
           pastedFiles = [];
           updateFileList();
@@ -836,6 +839,12 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
           textEl.focus();
         }}
       }}
+
+      function autoResize() {{
+        textEl.style.height = "auto";
+        textEl.style.height = textEl.scrollHeight + "px";
+      }}
+      textEl.addEventListener("input", autoResize);
 
       textEl.addEventListener("keydown", (event) => {{
         const isEnter = event.key === "Enter" || event.code === "Enter";
