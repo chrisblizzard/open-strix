@@ -62,6 +62,7 @@ from .web_ui import WebChatMixin
 
 UTC = timezone.utc
 LOG_ROLL_BYTES = 1_000_000
+TRANSIENT_PROVIDER_STATUS_CODES = frozenset({408, 409, 429, 500, 502, 503, 504, 529})
 
 
 def utc_now_iso() -> str:
@@ -118,12 +119,79 @@ def _web_ui_url(host: str, port: int) -> str:
     return f"http://{display_host}:{port}/"
 
 
+def _exception_status_code(exc: Exception) -> int | None:
+    status_code = getattr(exc, "status_code", None)
+    if isinstance(status_code, int):
+        return status_code
+    if isinstance(status_code, str):
+        stripped = status_code.strip()
+        if stripped.isdigit():
+            return int(stripped)
+    return None
+
+
+def _exception_request_id(exc: Exception) -> str | None:
+    request_id = getattr(exc, "request_id", None)
+    if request_id is None:
+        return None
+    text = str(request_id).strip()
+    return text or None
+
+
+def _error_log_fields(exc: Exception) -> dict[str, Any]:
+    payload: dict[str, Any] = {"error_class": type(exc).__name__}
+    status_code = _exception_status_code(exc)
+    if status_code is not None:
+        payload["error_status_code"] = status_code
+    request_id = _exception_request_id(exc)
+    if request_id is not None:
+        payload["provider_request_id"] = request_id
+    return payload
+
+
+def _is_transient_provider_error(exc: Exception) -> bool:
+    status_code = _exception_status_code(exc)
+    if status_code in TRANSIENT_PROVIDER_STATUS_CODES:
+        return True
+    if status_code is not None and status_code >= 500:
+        return True
+
+    error_name = type(exc).__name__.lower()
+    if error_name in {
+        "apiconnectionerror",
+        "apitimeouterror",
+        "connecterror",
+        "readtimeout",
+        "timeoutexception",
+    }:
+        return True
+
+    raw = str(exc).lower()
+    return (
+        "connection error" in raw
+        or "timed out" in raw
+        or "temporarily unavailable" in raw
+    )
+
+
+def _should_react_to_error(event: "AgentEvent") -> bool:
+    return bool(event.channel_id) and bool(event.author)
+
+
 def _humanize_local_web_error(exc: Exception) -> str:
     raw = str(exc).strip() or type(exc).__name__
     if "Could not resolve authentication method" in raw:
         return (
             "I couldn't reach the configured model because no API credentials are set. "
             "Add `ANTHROPIC_API_KEY` to `.env` and set `ANTHROPIC_BASE_URL` if you're not using the default MiniMax endpoint, then try again."
+        )
+    if _is_transient_provider_error(exc):
+        request_id = _exception_request_id(exc)
+        request_suffix = f" Provider request ID: {request_id}." if request_id else ""
+        return (
+            "The model provider returned a temporary server or network error while processing that message. "
+            "Please retry in a moment."
+            f"{request_suffix}"
         )
     if len(raw) > 280:
         raw = raw[:280].rstrip() + "..."
@@ -706,13 +774,16 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
                     source_event_type=event.event_type,
                     channel_id=event.channel_id,
                     error=str(exc),
+                    **_error_log_fields(exc),
                 )
             except Exception as exc:
-                reacted = await self._react_to_latest_message(
-                    channel_id=event.channel_id,
-                    emoji=ERROR_REACTION_EMOJI,
-                    include_bot=False,
-                )
+                reacted = False
+                if _should_react_to_error(event):
+                    reacted = await self._react_to_latest_message(
+                        channel_id=event.channel_id,
+                        emoji=ERROR_REACTION_EMOJI,
+                        include_bot=False,
+                    )
                 error_message_sent = False
                 if self.is_local_web_channel(event.channel_id):
                     error_message_sent = await self._send_local_web_error_message(event, exc)
@@ -723,6 +794,7 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
                     error=str(exc),
                     reacted_to_last_user_message=reacted,
                     error_message_sent=error_message_sent,
+                    **_error_log_fields(exc),
                 )
             finally:
                 if event.dedupe_key:

@@ -135,6 +135,21 @@ def test_startup_logs_loaded_skills_for_deepagents(
     assert "memory -> /.open_strix_builtin_skills/memory/SKILL.md" in output
 
 
+def test_humanize_local_web_error_mentions_retry_for_transient_provider_failure() -> None:
+    class TransientProviderError(RuntimeError):
+        pass
+
+    exc = TransientProviderError("Error code: 500 - internal server error")
+    exc.status_code = 500  # type: ignore[attr-defined]
+    exc.request_id = "req_test123"  # type: ignore[attr-defined]
+
+    text = app_mod._humanize_local_web_error(exc)
+
+    assert "temporary server or network error" in text
+    assert "retry" in text.lower()
+    assert "req_test123" in text
+
+
 @pytest.mark.asyncio
 async def test_run_starts_discord_with_configured_token_env(
     tmp_path: Path,
@@ -1469,6 +1484,59 @@ async def test_event_worker_reacts_to_last_user_message_on_error(
             await worker
 
     assert channel.message_by_id[777].reactions == [app_mod.ERROR_REACTION_EMOJI]
+
+
+@pytest.mark.asyncio
+async def test_event_worker_does_not_react_to_last_user_message_on_scheduler_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingAgent:
+        async def ainvoke(self, _: dict[str, Any]) -> dict[str, Any]:
+            raise RuntimeError("provider temporarily failed")
+
+    monkeypatch.setattr(app_mod, "create_deep_agent", lambda **_: FailingAgent())
+    app = app_mod.OpenStrixApp(tmp_path)
+    app._remember_message(
+        channel_id="local-web",
+        message_id="web-1",
+        author="local_user",
+        content="hello",
+        attachment_names=[],
+        is_bot=False,
+        source="web",
+    )
+
+    worker = asyncio.create_task(app._event_worker())
+    try:
+        await app.enqueue_event(
+            app_mod.AgentEvent(
+                event_type="scheduler",
+                prompt="run the scheduled task",
+                channel_id="local-web",
+                scheduler_name="nightly",
+            ),
+        )
+        await asyncio.wait_for(app.queue.join(), timeout=10)
+    finally:
+        worker.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await worker
+
+    messages = list(app.message_history_by_channel["local-web"])
+    assert messages[0]["reactions"] == []
+    assert messages[-1]["is_bot"] is True
+
+    error_events = [
+        json.loads(line)
+        for line in (tmp_path / "logs" / "events.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    matching_errors = [row for row in error_events if row.get("type") == "error"]
+    assert matching_errors
+    assert matching_errors[-1]["source_event_type"] == "scheduler"
+    assert matching_errors[-1]["reacted_to_last_user_message"] is False
+    assert matching_errors[-1]["error_message_sent"] is True
 
 
 @pytest.mark.asyncio
