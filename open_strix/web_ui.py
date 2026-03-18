@@ -839,6 +839,45 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
         return wrapper.innerHTML;
       }}
 
+      function createReactionsElement(reactionList) {{
+        if (!reactionList || !reactionList.length) {{
+          return null;
+        }}
+
+        const reactions = document.createElement("div");
+        reactions.className = "reactions";
+        reactions.dataset.reactions = JSON.stringify(reactionList);
+        reactionList.forEach((emoji) => {{
+          const chip = document.createElement("span");
+          chip.className = "reaction";
+          chip.textContent = emoji;
+          reactions.appendChild(chip);
+        }});
+        return reactions;
+      }}
+
+      function updateReactions(existingEl, newReactions) {{
+        const existingReactions = existingEl.querySelector(".reactions");
+        const nextValue = JSON.stringify(newReactions || []);
+        const currentValue = existingReactions ? (existingReactions.dataset.reactions || "[]") : "[]";
+        if (currentValue === nextValue) {{
+          return;
+        }}
+
+        const nextReactions = createReactionsElement(newReactions);
+        if (existingReactions && nextReactions) {{
+          existingReactions.replaceWith(nextReactions);
+          return;
+        }}
+        if (existingReactions) {{
+          existingReactions.remove();
+          return;
+        }}
+        if (nextReactions) {{
+          existingEl.appendChild(nextReactions);
+        }}
+      }}
+
       function createMessageElement(message) {{
         const article = document.createElement("article");
         article.className = `message ${{message.is_bot ? "agent" : "user"}}`;
@@ -912,15 +951,8 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
           article.appendChild(attachments);
         }}
 
-        if (message.reactions && message.reactions.length) {{
-          const reactions = document.createElement("div");
-          reactions.className = "reactions";
-          message.reactions.forEach((emoji) => {{
-            const chip = document.createElement("span");
-            chip.className = "reaction";
-            chip.textContent = emoji;
-            reactions.appendChild(chip);
-          }});
+        const reactions = createReactionsElement(message.reactions);
+        if (reactions) {{
           article.appendChild(reactions);
         }}
 
@@ -928,11 +960,15 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
       }}
 
       function upsertMessageElement(message, append = true) {{
-        const el = createMessageElement(message);
         const existing = knownIds.get(message.message_id);
         if (existing) {{
-          existing.replaceWith(el);
-        }} else if (append) {{
+          updateReactions(existing, message.reactions);
+          knownIds.set(message.message_id, existing);
+          return;
+        }}
+
+        const el = createMessageElement(message);
+        if (append) {{
           messagesEl.appendChild(el);
         }}
         knownIds.set(message.message_id, el);

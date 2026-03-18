@@ -73,14 +73,16 @@ def test_web_ui_page_includes_markdown_assets_and_styles(tmp_path: Path) -> None
     assert ".body td" in page
 
 
-def test_web_ui_page_refresh_replaces_existing_messages_to_show_new_reactions(tmp_path: Path) -> None:
+def test_web_ui_page_refresh_updates_existing_message_reactions_without_replacing_nodes(tmp_path: Path) -> None:
     strix = DummyStrix(tmp_path / "atlas")
 
     page = _render_web_ui_page(strix)
 
+    assert "function updateReactions(existingEl, newReactions)" in page
     assert "function upsertMessageElement(message, append = true)" in page
     assert "const existing = knownIds.get(message.message_id);" in page
-    assert "existing.replaceWith(el);" in page
+    assert "updateReactions(existing, message.reactions);" in page
+    assert "existing.replaceWith(el);" not in page
 
 
 def test_web_attachment_payload_strips_leading_slashes_from_urls(tmp_path: Path) -> None:
