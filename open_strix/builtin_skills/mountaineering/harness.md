@@ -10,18 +10,17 @@ Each climb lives in its own directory:
 climbers/
 └── {climb-id}/
     ├── program.md          # Frozen S5 — goal, constraints, scope
-    ├── eval/               # Frozen evaluation (Law 4)
+    ├── eval/               # Evaluation scripts and rubrics
     │   ├── eval.py         # Scoring script
     │   └── rubric.md       # Evaluation criteria (if LLM-judged)
-    ├── .frozen/            # Hidden copies of eval files (Law 4 enforcement)
-    │   ├── eval.py
-    │   └── rubric.md
     ├── workspace/          # The mutable surface — what the climber can edit
     │   └── (whatever the climb targets)
     ├── logs/               # Append-only results
-    │   └── results.jsonl   # One entry per iteration
+    │   └── results.jsonl   # One entry per iteration (ring buffer)
     └── config.json         # Climb configuration
 ```
+
+**Note:** There is no `.frozen/` directory. Evaluation files are loaded into the supervisor's process memory at climb registration time. The climber never has the eval files on disk in its workspace — architectural enforcement of Law 4 (scope separation).
 
 ## config.json
 
@@ -32,7 +31,6 @@ climbers/
   "results_window": 20,
   "eval_command": "python eval/eval.py",
   "scope": ["workspace/"],
-  "frozen_files": ["eval/eval.py", "eval/rubric.md"],
   "budget_limit_tokens": 1000000
 }
 ```
@@ -40,11 +38,11 @@ climbers/
 Key fields:
 - `results_window` — how many past results the climber sees each iteration (prevents context growth)
 - `scope` — directories/files the climber is allowed to modify (everything else is read-only)
-- `frozen_files` — files copied to `.frozen/` at climb start, diffed each iteration
+- `eval_command` — command the supervisor runs to score the workspace (the climber never runs this directly)
 
 ## program.md Template
 
-This is the climber's frozen identity. Write it before the climb starts. It doesn't change.
+This is the climber's frozen identity. Write it before the climb starts. It doesn't change during the climb.
 
 ```markdown
 # Climb: {name}
@@ -53,7 +51,7 @@ This is the climber's frozen identity. Write it before the climb starts. It does
 {What are we optimizing? Be specific.}
 
 ## Metric
-{How do we measure improvement? Reference the eval script.}
+{How do we measure improvement? Reference the eval approach.}
 
 ## Scope
 {What can the climber modify? What is off-limits?}
@@ -62,7 +60,6 @@ This is the climber's frozen identity. Write it before the climb starts. It does
 - One change per iteration
 - Must be reversible (git commit before each change)
 - Do not modify files outside workspace/
-- Do not modify eval/ directory
 
 ## Context
 {Domain knowledge the climber needs. Background, prior findings,
@@ -74,12 +71,13 @@ known failure modes. This is Law 5 — informed search.}
 - External: supervisor kills the climb
 ```
 
-## Eval Script Template
+## Evaluation Patterns
 
-The eval script scores the current state of the workspace. It must:
-1. Be deterministic (Law 2)
-2. Output a JSON result to stdout
-3. Exit 0 on success, non-zero on eval failure (not low score — actual error)
+The eval script scores the current state of the workspace. The supervisor runs this — the climber never executes it directly (Law 4).
+
+### Deterministic Eval
+
+For metrics that can be computed programmatically:
 
 ```python
 #!/usr/bin/env python3
@@ -98,7 +96,7 @@ def evaluate():
     return {
         "score": score,
         "details": details,
-        "pass": score > THRESHOLD,  # Binary pass/fail if using checklist
+        "pass": score > THRESHOLD,
     }
 
 if __name__ == "__main__":
@@ -107,9 +105,14 @@ if __name__ == "__main__":
     sys.exit(0)
 ```
 
-### LLM-Judge Eval Pattern
+Requirements:
+1. Deterministic output (Law 2)
+2. JSON result to stdout
+3. Exit 0 on success, non-zero on eval error (not low score — actual failure)
 
-For metrics that need LLM judgment (text quality, insight generation):
+### LLM-Judge Eval
+
+For metrics that need LLM judgment (text quality, insight generation). Use binary yes/no questions for consistency (Law 2):
 
 ```python
 #!/usr/bin/env python3
@@ -118,16 +121,14 @@ import json
 import sys
 
 def evaluate():
-    # Read workspace output
     with open("workspace/output.txt") as f:
         output = f.read()
 
-    # Read frozen rubric
     with open("eval/rubric.md") as f:
         rubric = f.read()
 
-    # Call LLM judge (NOT the same model doing the climbing)
-    # Use a simple yes/no checklist for consistency (Law 2)
+    # Call LLM judge — NOT the same model doing the climbing
+    # Binary yes/no checklist for consistency (Law 2)
     checks = [
         judge(output, rubric, "Does the output address the core question? yes/no"),
         judge(output, rubric, "Is the reasoning supported by evidence? yes/no"),
@@ -138,16 +139,16 @@ def evaluate():
     return {"score": score, "checks": checks}
 ```
 
-### Judge Panel Pattern
+### Judge Panel
 
-For stronger Law 4 enforcement — multiple judges with different perspectives:
+For stronger Law 4 enforcement — multiple judges seeded with different perspectives so they genuinely disagree:
 
 ```python
 JUDGES = [
     {"name": "accuracy", "prompt": "Is this factually correct and well-calibrated?"},
     {"name": "breadth", "prompt": "Does this cover diverse aspects, not just easy ones?"},
     {"name": "surprise", "prompt": "Does this contain insights not obvious from priors?"},
-    {"name": "adversarial", "prompt": "Is this trivially derivable from context? Could it be gamed?"},
+    {"name": "adversarial", "prompt": "Is this trivially derivable? Could it be gamed?"},
 ]
 
 def evaluate():
@@ -158,22 +159,11 @@ def evaluate():
     return {"score": mean(scores.values()), "judges": scores}
 ```
 
-## Frozen File Setup
-
-At climb start, copy eval files to the hidden directory:
-
-```bash
-# Initial setup
-cp -r climbers/my-climb/eval/* climbers/my-climb/.frozen/
-
-# Each iteration, verify integrity
-diff -r climbers/my-climb/eval/ climbers/my-climb/.frozen/
-# If diff shows changes → eval was tampered → revert from .frozen/
-```
+The adversarial judge is key — it specifically checks for gaming patterns. Convergence across all four judges (including the adversarial one) is stronger evidence of genuine improvement than any single judge.
 
 ## Results Log Format
 
-Each iteration appends one line to `logs/results.jsonl`:
+Each iteration appends one line to `logs/results.jsonl`. The log operates as a ring buffer — the climber only reads the last `results_window` entries each iteration:
 
 ```json
 {
@@ -187,7 +177,7 @@ Each iteration appends one line to `logs/results.jsonl`:
 }
 ```
 
-The climber reads the last `results_window` entries from this file each iteration.
+The log file grows, but memory usage does not — the climber reads only the last N entries via streaming (deque with maxlen).
 
 ## Common Harness Patterns
 
@@ -207,11 +197,13 @@ The climber reads the last `results_window` entries from this file each iteratio
 - Workspace: source file(s)
 - Eval: test suite + performance benchmark
 - Scope: implementation only, not tests
+- Coding agent option: for sophisticated file manipulation, consider using `npx acpx` or similar coding agent as the climber runtime instead of the default DeepAgent. Document this as a power-user configuration, not the default.
 - Expected convergence: 10-100 iterations
 
 ### World Model (Predictions)
 - Workspace: memory block content (natural language)
 - Eval: prediction accuracy + insight generation (judge panel)
 - Scope: memory blocks, not prediction resolution logic
-- Iteration cycle: weekly (slow feedback)
+- Iteration cycle: weekly (slow feedback — predictions take days/weeks to resolve)
 - Expected convergence: 10-20 cycles (months)
+- Special consideration: interleaved memory updates between iterations can be filtered by having the patch-applying agent examine other changes for confounds
