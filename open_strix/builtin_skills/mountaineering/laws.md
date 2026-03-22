@@ -56,30 +56,32 @@ The same evaluation uses binary yes/no questions: "Is the prediction falsifiable
 
 **Failed experiments must be fully reversible — without collateral damage.**
 
-The rollback scope must match the modification scope. If the climber only modifies DAG edges, rollback only affects edges. Memories, journal entries, and state files must be untouchable.
+The rollback scope must match the modification scope. If the climber only modifies one data structure, rollback only affects that structure. Memories, journal entries, and other state must be untouchable.
 
 This is what enables the "try one change" pattern. Without reversibility, the optimizer becomes conservative (can't afford to try things that might fail) and convergence slows dramatically. With reversibility, every iteration is a free experiment.
 
 ### ⚠️ `git revert` is toxic for stateful agents
 
-If the mutable surface (e.g., DAG edges) lives in the same repository as memory blocks, journal, and state files, `git revert` nukes everything in that commit — including memories that formed during the experiment. Accidental forgetting for the sake of graph optimization is worse than no rollback at all.
+If the mutable surface lives in the same repository as memory blocks, journal, and state files, `git revert` nukes everything in that commit — including memories that formed during the experiment. Accidental forgetting for the sake of optimization is worse than no rollback at all.
 
 **Never use `git revert` as a rollback mechanism when agent state lives in git.**
 
-### Rollback mechanisms (ranked by preference)
+### Rollback values
 
-1. **Domain-specific undo log** — record edge operations as an append-only log. Rollback = replay without the failed batch. Memories untouched.
-2. **Isolated mutable surface** — climber writes to a separate data file (e.g., `state/graphs/edges.json`). Rollback = restore previous version of that one file. Everything else untouched.
-3. **Soft edges with weight decay** — new edges start at low weight, earn weight through successful predictions. Failed edges decay to zero naturally. No explicit rollback needed.
-4. **Monotonic growth (no rollback)** — only add edges, never remove. Wrong edges dilute prediction accuracy but don't destroy anything. Simplest option; works when the graph is sparse.
+The right rollback mechanism depends on the climb. These are values to optimize for, not a checklist — each has real tradeoffs:
+
+- **Scope isolation** — rollback touches only what the climber modified. The narrower the blast radius, the safer the experiment. Tradeoff: requires upfront design of the mutable surface boundary.
+- **Auditability** — every change is logged, every rollback is traceable. An append-only operation log lets you replay history, not just undo it. Tradeoff: storage grows, and replay logic adds complexity.
+- **Graceful degradation** — failed experiments degrade quality rather than break things. Soft weights that decay, or additive-only changes that dilute rather than corrupt. Tradeoff: slower convergence, since bad changes linger rather than being cleanly removed.
+- **Simplicity** — the simplest mechanism you can get away with. Sometimes "just restore the previous version of one file" is all you need. Tradeoff: only works when the mutable surface is truly isolated to one artifact.
 
 ### What violation looks like
 
-A DAG optimization climb uses `git revert` to undo a bad edge change. The revert also removes three journal entries, a memory block update, and a state file change that happened in the same commit window. The agent "forgets" context from the experiment period. The climb optimized graph traversal at the cost of agent coherence.
+A stateful agent uses `git revert` to undo a bad change to its workspace. The revert also removes three journal entries, a memory block update, and a state file change that happened in the same commit window. The agent "forgets" context from the experiment period. The climb optimized one thing at the cost of agent coherence.
 
 ### What compliance looks like
 
-The climber stores proposed edges in `state/graphs/candidate_edges.json`. Each iteration, the evaluator scores prediction accuracy with the candidates included. If accuracy drops, the candidate file is rolled back to its previous version. Journal, memory, and state files are never in the rollback path. Failed experiments are invisible to everything except the edge candidates.
+The climber writes proposed changes to an isolated workspace file. Each iteration, the evaluator scores the result with the changes applied. If the score drops, the workspace file is rolled back to its previous version. Journal, memory, and state files are never in the rollback path. Failed experiments are invisible to everything except the workspace.
 
 ### Connection to scope separation
 
