@@ -38,7 +38,7 @@ Send `SIGINT` or `SIGTERM` to the worker process. It exits cleanly after the cur
 ## Monitor
 
 - Watch the worker stdout for lifecycle events like `issue_claimed`, `prompt_complete`, and `review_approved`
-- Check `chainlink session status --json` in `/Users/timkellogg/code/sandbox/goat-herder`
+- Check `chainlink session status --json` in your chainlink working directory
 - Check `npx acpx codex sessions show issue-<id>` in the routed repo
 - Check `chainlink show <id> --json` for labels, comments, and milestone context
 
@@ -49,16 +49,16 @@ Send `SIGINT` or `SIGTERM` to the worker process. It exits cleanly after the cur
 3. If changes are needed, add a review comment in chainlink:
 
 ```bash
-cd /Users/timkellogg/code/sandbox/goat-herder
-~/.cargo/bin/chainlink issue comment <id> "Please add focused regression coverage for ..." --kind human
+# cd to your chainlink working directory
+chainlink issue comment <id> "Please add focused regression coverage for ..." --kind human
 ```
 
 4. The worker removes `ready-for-review`, re-prompts the same Codex session, then restores `ready-for-review`.
 5. Approve with an explicit approval comment. Recommended:
 
 ```bash
-cd /Users/timkellogg/code/sandbox/goat-herder
-~/.cargo/bin/chainlink issue comment <id> "APPROVED" --kind resolution
+# cd to your chainlink working directory
+chainlink issue comment <id> "APPROVED" --kind resolution
 ```
 
 The worker closes the issue and then closes the Codex session on the next poll.

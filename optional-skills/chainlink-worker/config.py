@@ -10,13 +10,10 @@ import tomllib
 
 DEFAULT_CONFIG_PATH = Path.home() / ".config" / "chainlink-worker" / "config.toml"
 
-DEFAULT_CHAINLINK_CWD = Path("/Users/timkellogg/code/sandbox/goat-herder")
+DEFAULT_CHAINLINK_CWD = Path.cwd()
 
-DEFAULT_REPOS = {
-    "vera-prism": Path("/Users/timkellogg/code/sandbox/goat-herder/vera-prism"),
-    "data-lake-ml": Path("/Users/timkellogg/code/icertis/data-lake-ml"),
-    "herder": Path("/Users/timkellogg/code/sandbox/goat-herder/herder"),
-    "open-strix": Path("/Users/timkellogg/code/sandbox/goat-herder/open-strix"),
+DEFAULT_REPOS: dict[str, Path] = {
+    # Configure repos in ~/.config/chainlink-worker/config.toml under [repos]
 }
 
 

@@ -26,7 +26,7 @@ def test_load_config_defaults_when_missing(tmp_path: Path, monkeypatch) -> None:
     assert loaded.worker.max_codex_wait_seconds == 1800
     assert loaded.worker.agent_id == "backlog-worker"
     assert loaded.worker.rules_dir is None
-    assert loaded.repos["open-strix"] == Path("/Users/timkellogg/code/sandbox/goat-herder/open-strix")
+    assert loaded.repos == chainlink_worker_config.DEFAULT_REPOS
     assert loaded.source_path is None
 
 
@@ -60,7 +60,7 @@ new-repo = "~/src/new-repo"
     assert loaded.worker.rules_dir == Path("~/rules").expanduser()
     assert loaded.repos["open-strix"] == Path("~/src/open-strix").expanduser()
     assert loaded.repos["new-repo"] == Path("~/src/new-repo").expanduser()
-    assert loaded.repos["vera-prism"] == chainlink_worker_config.DEFAULT_REPOS["vera-prism"]
+    assert "vera-prism" not in loaded.repos  # DEFAULT_REPOS is empty; only config entries
 
 
 def test_empty_rules_dir_becomes_none(tmp_path: Path) -> None:
