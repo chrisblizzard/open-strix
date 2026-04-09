@@ -69,6 +69,7 @@ from .web_ui import WebChatMixin
 UTC = timezone.utc
 LOG_ROLL_BYTES = 1_000_000
 TRANSIENT_PROVIDER_STATUS_CODES = frozenset({408, 409, 429, 500, 502, 503, 504, 529})
+GIT_SUBPROCESS_TIMEOUT = 30
 
 
 def utc_now_iso() -> str:
@@ -258,6 +259,7 @@ def _git_sync(home: Path) -> str:
         capture_output=True,
         text=True,
         check=False,
+        timeout=GIT_SUBPROCESS_TIMEOUT,
     )
     if add_proc.returncode != 0:
         return f"git add failed: {add_proc.stderr.strip()}"
@@ -268,6 +270,7 @@ def _git_sync(home: Path) -> str:
         capture_output=True,
         text=True,
         check=False,
+        timeout=GIT_SUBPROCESS_TIMEOUT,
     )
     if status_proc.returncode != 0:
         return f"git status failed: {status_proc.stderr.strip()}"
@@ -280,6 +283,7 @@ def _git_sync(home: Path) -> str:
         capture_output=True,
         text=True,
         check=False,
+        timeout=GIT_SUBPROCESS_TIMEOUT,
     )
     if commit_proc.returncode != 0:
         return f"git commit failed: {commit_proc.stderr.strip()}"
@@ -290,6 +294,7 @@ def _git_sync(home: Path) -> str:
         capture_output=True,
         text=True,
         check=False,
+        timeout=GIT_SUBPROCESS_TIMEOUT,
     )
     if push_proc.returncode != 0:
         return f"git push failed: {push_proc.stderr.strip()}"
