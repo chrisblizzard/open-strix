@@ -61,6 +61,7 @@ from .tools import (
     SEND_MESSAGE_LOOP_HARD_LIMIT,
     SEND_MESSAGE_LOOP_SIMILARITY_THRESHOLD,
     SEND_MESSAGE_LOOP_SOFT_LIMIT,
+    SEND_MESSAGE_LOOP_WARN_LIMIT,
     SendMessageCircuitBreakerStop,
     ToolsMixin,
 )
@@ -362,6 +363,7 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
         self.worker_task: asyncio.Task[Any] | None = None
         self._current_turn_sent_messages: list[tuple[str, str]] | None = None
         self.send_message_loop_soft_limit = SEND_MESSAGE_LOOP_SOFT_LIMIT
+        self.send_message_loop_warn_limit = SEND_MESSAGE_LOOP_WARN_LIMIT
         self.send_message_loop_hard_limit = SEND_MESSAGE_LOOP_HARD_LIMIT
         self.send_message_loop_similarity_threshold = SEND_MESSAGE_LOOP_SIMILARITY_THRESHOLD
         self._send_message_last_text_normalized: str | None = None
