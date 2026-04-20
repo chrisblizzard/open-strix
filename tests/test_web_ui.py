@@ -88,6 +88,14 @@ def test_web_ui_page_refresh_updates_existing_message_reactions_without_replacin
     assert "existing.replaceWith(el);" not in page
 
 
+def test_web_ui_page_escapes_shell_job_output_newlines_in_inline_js(tmp_path: Path) -> None:
+    strix = DummyStrix(tmp_path / "atlas")
+
+    page = _render_web_ui_page(strix)
+
+    assert "const out = (d.stdout_tail || '') + (d.stderr_tail ? '\\n--- stderr ---\\n' + d.stderr_tail : '');" in page
+
+
 def test_web_attachment_payload_strips_leading_slashes_from_urls(tmp_path: Path) -> None:
     strix = DummyStrix(tmp_path / "atlas")
 

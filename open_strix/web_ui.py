@@ -829,7 +829,7 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
                 .then(d => {{
                   const el = shellJobsPanelEl.querySelector('[data-output="' + jid + '"]');
                   if (!el) return;
-                  const out = (d.stdout_tail || '') + (d.stderr_tail ? '\n--- stderr ---\n' + d.stderr_tail : '');
+                  const out = (d.stdout_tail || '') + (d.stderr_tail ? '\\n--- stderr ---\\n' + d.stderr_tail : '');
                   el.textContent = out || '(no output yet)';
                 }})
                 .catch(() => {{}});
