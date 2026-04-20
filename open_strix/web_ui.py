@@ -225,6 +225,17 @@ def _turn_elapsed_seconds(strix: OpenStrixApp) -> float | None:
     return round(time.monotonic() - turn_start, 1)
 
 
+def _shell_jobs_payload(strix: OpenStrixApp) -> list[dict]:
+    """Snapshot of currently visible shell jobs for the web UI."""
+    registry = getattr(strix, "shell_jobs", None)
+    if registry is None:
+        return []
+    try:
+        return [job.snapshot() for job in registry.visible_jobs()]
+    except Exception:
+        return []
+
+
 def _render_web_ui_page(strix: OpenStrixApp) -> str:
     agent_name = _web_agent_name(strix)
     agent_name_json = json.dumps(agent_name)
@@ -313,6 +324,67 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
       .typing-indicator.status-stuck {{
         color: #e63946;
         font-weight: bold;
+      }}
+
+      .shell-jobs-bar {{
+        display: flex;
+        justify-content: flex-end;
+        padding: 0 0.5rem 0.15rem 0.5rem;
+      }}
+
+      .shell-jobs-pill {{
+        font-size: 0.72rem;
+        color: var(--muted);
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 10px;
+        padding: 0.1rem 0.55rem;
+        cursor: pointer;
+        user-select: none;
+      }}
+
+      .shell-jobs-pill:hover {{ background: rgba(255,255,255,0.09); }}
+      .shell-jobs-pill[hidden] {{ display: none; }}
+
+      .shell-jobs-panel {{
+        position: fixed;
+        right: 1rem;
+        bottom: 6rem;
+        width: min(520px, 90vw);
+        max-height: 60vh;
+        background: #1a1a1a;
+        border: 1px solid #333;
+        border-radius: 8px;
+        padding: 0.6rem;
+        font-size: 0.8rem;
+        box-shadow: 0 4px 18px rgba(0,0,0,0.4);
+        overflow: auto;
+        z-index: 50;
+      }}
+      .shell-jobs-panel[hidden] {{ display: none; }}
+
+      .shell-job-row {{
+        padding: 0.35rem 0.4rem;
+        border-bottom: 1px solid #2a2a2a;
+        cursor: pointer;
+      }}
+      .shell-job-row:last-child {{ border-bottom: none; }}
+      .shell-job-row:hover {{ background: rgba(255,255,255,0.04); }}
+      .shell-job-row .jid {{ font-family: monospace; color: var(--accent); }}
+      .shell-job-row .cmd {{ color: #ccc; font-family: monospace; }}
+      .shell-job-row .meta {{ color: var(--muted); font-size: 0.72rem; }}
+
+      .shell-job-output {{
+        background: #0d0d0d;
+        color: #ddd;
+        padding: 0.5rem;
+        font-family: monospace;
+        font-size: 0.72rem;
+        white-space: pre-wrap;
+        max-height: 40vh;
+        overflow: auto;
+        border-radius: 4px;
+        margin-top: 0.35rem;
       }}
 
       .elapsed {{
@@ -660,6 +732,10 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
 
       <section class="composer">
         <form class="composer-form" id="composer">
+          <div class="shell-jobs-bar">
+            <span class="shell-jobs-pill" id="shell-jobs-pill" hidden></span>
+          </div>
+          <div class="shell-jobs-panel" id="shell-jobs-panel" hidden></div>
           <div class="typing-indicator" id="typing-indicator"></div>
           <textarea id="text" name="text" placeholder="Message {agent_name}..."></textarea>
           <div class="composer-actions">
@@ -685,8 +761,88 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
       const fileListEl = document.getElementById("file-list");
       const sendEl = document.getElementById("send");
       const typingEl = document.getElementById("typing-indicator");
+      const shellJobsPillEl = document.getElementById("shell-jobs-pill");
+      const shellJobsPanelEl = document.getElementById("shell-jobs-panel");
 
+      let shellJobsPanelOpen = false;
+      let shellJobsExpandedId = null;
+      let currentShellJobs = [];
       let pastedFiles = [];
+
+      function formatElapsed(sec) {{
+        if (sec == null) return '';
+        if (sec < 60) return sec.toFixed(0) + 's';
+        const m = Math.floor(sec / 60);
+        const s = Math.floor(sec % 60);
+        return m + 'm' + s + 's';
+      }}
+
+      function renderShellJobs(jobs) {{
+        currentShellJobs = jobs || [];
+        const running = currentShellJobs.filter(j => j.status === 'running');
+        if (currentShellJobs.length === 0) {{
+          shellJobsPillEl.hidden = true;
+          shellJobsPanelEl.hidden = true;
+          shellJobsPanelOpen = false;
+          return;
+        }}
+        const label = running.length > 0
+          ? running.length + ' shell task' + (running.length === 1 ? '' : 's') + ' running'
+          : currentShellJobs.length + ' shell task' + (currentShellJobs.length === 1 ? '' : 's') + ' (finished)';
+        shellJobsPillEl.textContent = label;
+        shellJobsPillEl.hidden = false;
+        if (shellJobsPanelOpen) {{
+          renderShellJobsPanel();
+        }}
+      }}
+
+      function renderShellJobsPanel() {{
+        if (!shellJobsPanelOpen) {{ shellJobsPanelEl.hidden = true; return; }}
+        shellJobsPanelEl.hidden = false;
+        const rows = currentShellJobs.map(j => {{
+          const cmd = (j.command || '').slice(0, 80);
+          const statusColor = j.status === 'running' ? '#6fdc8c' : (j.exit_code === 0 ? '#888' : '#e63946');
+          const expanded = shellJobsExpandedId === j.job_id;
+          const outputHtml = expanded
+            ? '<div class="shell-job-output" data-output="' + j.job_id + '">loading…</div>'
+            : '';
+          return (
+            '<div class="shell-job-row" data-job="' + j.job_id + '">' +
+              '<div><span class="jid">' + j.job_id + '</span> ' +
+              '<span style="color:' + statusColor + '">' + j.status + '</span> ' +
+              '<span class="meta">pid=' + j.pid + ' · ' + formatElapsed(j.elapsed_seconds) +
+              (j.exit_code != null ? ' · exit=' + j.exit_code : '') + '</span></div>' +
+              '<div class="cmd">$ ' + cmd.replace(/</g, '&lt;') + '</div>' +
+              outputHtml +
+            '</div>'
+          );
+        }}).join('');
+        shellJobsPanelEl.innerHTML = rows || '<div class="meta">No jobs.</div>';
+        shellJobsPanelEl.querySelectorAll('.shell-job-row').forEach(row => {{
+          row.addEventListener('click', () => {{
+            const jid = row.getAttribute('data-job');
+            shellJobsExpandedId = (shellJobsExpandedId === jid) ? null : jid;
+            renderShellJobsPanel();
+            if (shellJobsExpandedId === jid) {{
+              fetch('/api/shell-jobs/' + encodeURIComponent(jid) + '?tail=400')
+                .then(r => r.json())
+                .then(d => {{
+                  const el = shellJobsPanelEl.querySelector('[data-output="' + jid + '"]');
+                  if (!el) return;
+                  const out = (d.stdout_tail || '') + (d.stderr_tail ? '\n--- stderr ---\n' + d.stderr_tail : '');
+                  el.textContent = out || '(no output yet)';
+                }})
+                .catch(() => {{}});
+            }}
+          }});
+        }});
+      }}
+
+      shellJobsPillEl.addEventListener('click', () => {{
+        shellJobsPanelOpen = !shellJobsPanelOpen;
+        renderShellJobsPanel();
+      }});
+
       let knownIds = new Map();
       let oldestLoadedId = null;
       let hasMoreHistory = true;
@@ -1037,6 +1193,7 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
           typingEl.className = 'typing-indicator';
           typingEl.innerHTML = '';
         }}
+        renderShellJobs(payload.shell_jobs || []);
 
         if (typeof payload.has_more !== 'undefined') {{
           hasMoreHistory = payload.has_more;
@@ -1235,6 +1392,7 @@ def _build_web_ui_app(strix: OpenStrixApp) -> web.Application:
                 "is_processing": strix.current_event_label is not None,
                 "processing_label": strix.current_event_label,
                 "turn_elapsed_seconds": _turn_elapsed_seconds(strix),
+                "shell_jobs": _shell_jobs_payload(strix),
             },
         )
 
@@ -1255,6 +1413,7 @@ def _build_web_ui_app(strix: OpenStrixApp) -> web.Application:
                 "is_processing": strix.current_event_label is not None,
                 "processing_label": strix.current_event_label,
                 "turn_elapsed_seconds": _turn_elapsed_seconds(strix),
+                "shell_jobs": _shell_jobs_payload(strix),
                 "messages": messages,
                 "has_more": has_more,
             },
@@ -1294,10 +1453,33 @@ def _build_web_ui_app(strix: OpenStrixApp) -> web.Application:
             raise web.HTTPNotFound()
         return web.FileResponse(target)
 
+    async def list_shell_jobs(_: web.Request) -> web.Response:
+        registry = getattr(strix, "shell_jobs", None)
+        if registry is None:
+            return web.json_response({"jobs": []})
+        return web.json_response({"jobs": [job.snapshot() for job in registry.all_jobs()]})
+
+    async def shell_job_detail(request: web.Request) -> web.Response:
+        registry = getattr(strix, "shell_jobs", None)
+        if registry is None:
+            raise web.HTTPNotFound()
+        job_id = request.match_info["job_id"]
+        try:
+            tail_lines = int(request.query.get("tail", "400"))
+        except ValueError:
+            tail_lines = 400
+        try:
+            data = registry.read_output(job_id, tail_lines=tail_lines, stream="both")
+        except KeyError:
+            raise web.HTTPNotFound()
+        return web.json_response(data)
+
     app.router.add_get("/", index)
     app.router.add_get("/api/health", health)
     app.router.add_get("/api/messages", list_messages)
     app.router.add_post("/api/messages", post_message)
+    app.router.add_get("/api/shell-jobs", list_shell_jobs)
+    app.router.add_get("/api/shell-jobs/{job_id}", shell_job_detail)
     app.router.add_get("/files/{path:.*}", serve_file)
     return app
 
