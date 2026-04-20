@@ -56,6 +56,7 @@ from .models import AgentEvent
 from .prompts import DEFAULT_CHECKPOINT, SYSTEM_PROMPT, render_folders_section, render_turn_prompt
 from .readonly_backend import BUILTIN_SKILLS_ROUTE, LoggingWriteGuardBackend, build_builtin_skills_backend
 from .scheduler import SchedulerJob, SchedulerMixin
+from .shell_jobs import ShellJobRegistry
 from .supervisor import Supervisor
 from .tools import (
     SEND_MESSAGE_LOOP_HARD_LIMIT,
@@ -356,6 +357,9 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
         self._load_chat_history()
         # Session-scoped cache for fetched web content; cleaned up on shutdown.
         self.fetch_cache_dir = Path(tempfile.mkdtemp(prefix="fetch-cache-", dir=self.layout.logs_dir))
+        self.shell_jobs = ShellJobRegistry(
+            jobs_dir=self.layout.logs_dir / "shell-jobs",
+        )
 
         self.discord_client: DiscordBridge | None = None
         self.api_runner: Any | None = None
