@@ -41,6 +41,10 @@ Most frameworks treat agent errors as incidents to debug — log *where* the age
 
 Every tool call, incoming message, error, and scheduler trigger lands in `logs/events.jsonl`. The agent can read its own event log. External scripts — pollers, wrappers, sibling agents — can write to it via a loopback REST API. It isn't logging in the "observability" sense. It's the substrate that ambient correction loops and cross-agent coordination run on. A boundary log in a format everyone already has a client for.
 
+### Pollers invert the trigger model
+
+Most agents wait to be triggered — a message arrives, a webhook fires, a user asks. Pollers flip that: they run on a schedule, scan external state (Bluesky, GitHub, a file, a repo), and *emit events into the agent's stream* when something's actionable. Self-scheduling gives the agent tools to create its own work from internal motivation; pollers give the external world a way to surface itself without the agent having to ask. Combined, the agent doesn't just respond to the world — it notices it. Pollers live as `pollers.json` inside skills, are discovered automatically, and reload without restart.
+
 ### Cheap enough to actually run
 
 Defaults to MiniMax M2.5 via the Anthropic-compatible API. Pennies per message. This is a personal tool, not an enterprise deployment. Run it on a $5/month VPS and leave it on.
