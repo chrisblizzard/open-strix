@@ -1,6 +1,6 @@
 ---
 name: patterns
-description: Patterns for open-strix skills. Use eagerly. Any time you're solving a problem or running into friction, or just curious and want to serve your operator better.
+description: Index of recurring problem shapes — environmental awareness (world-scanning, OS event hooks, browser automation), communication (messaging, multi-agent handoff, async waits), coordination between parallel things (avoiding collisions, oscillation, double-work), and self-correction (circuit-breaker, try-harder). Use when designing a non-trivial workflow, when the same shape just happened twice, or when the answer to "what should I do here?" isn't obvious. Don't read on every turn.
 ---
 
 Having problems that look like this? 
