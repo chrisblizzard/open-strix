@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 WEB_UI_CHANNEL_NAME = "Local Web"
 WEB_UI_AUTHOR = "local_user"
 WEB_UI_AUTHOR_ID = "local-web-user"
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".avif", ".heic"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".avif", ".heic", ".svg"}
 
 
 def _is_inline_image(path_text: str) -> bool:
