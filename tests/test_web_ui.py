@@ -20,6 +20,7 @@ from open_strix.shell_jobs import ShellJobRegistry
 from open_strix.web_ui import (
     WebChatMixin,
     _build_web_ui_app,
+    _is_inline_image,
     _render_web_ui_page,
     _web_agent_name,
 )
@@ -121,6 +122,30 @@ def test_web_attachment_payload_strips_leading_slashes_from_urls(tmp_path: Path)
 
     assert payload["path"] == "/state/research-findings/report.md"
     assert payload["url"] == "/files/state/research-findings/report.md"
+
+
+def test_is_inline_image_detects_svg() -> None:
+    # Issue: web UI only rendered raster image attachments; SVGs were shown
+    # as a plain "attachment" link instead of inlined. Including .svg in
+    # IMAGE_EXTENSIONS lets the existing <img>-rendering branch handle them
+    # (browsers render image/svg+xml inline, and aiohttp.web.FileResponse
+    # already serves the correct content-type via mimetypes.guess_type).
+    assert _is_inline_image("diagram.svg") is True
+    assert _is_inline_image("DIAGRAM.SVG") is True
+    assert _is_inline_image("/state/visuals/agent.svg") is True
+    # Sanity: still rejects non-image extensions.
+    assert _is_inline_image("notes.txt") is False
+    assert _is_inline_image("script.js") is False
+
+
+def test_web_attachment_payload_marks_svg_as_inline_image(tmp_path: Path) -> None:
+    strix = DummyStrix(tmp_path / "atlas")
+
+    payload = strix._web_attachment_payload("/state/visuals/diagram.svg")
+
+    assert payload["name"] == "diagram.svg"
+    assert payload["url"] == "/files/state/visuals/diagram.svg"
+    assert payload["is_image"] is True
 
 
 def test_web_ui_page_includes_status_css_classes(tmp_path: Path) -> None:
