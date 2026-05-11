@@ -260,6 +260,48 @@ async def test_local_web_send_and_react_round_trip(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_web_ui_message_record_includes_format_field(tmp_path: Path) -> None:
+    strix = DummyStrix(tmp_path)
+
+    sent, message_id, chunks = await strix._send_channel_message(
+        channel_id="local-web",
+        text="<strong>agent card</strong>",
+        format="html",
+    )
+
+    assert sent is True
+    assert chunks == 1
+    assert message_id is not None
+
+    history_lines = [
+        json.loads(line)
+        for line in (tmp_path / "logs" / "chat-history.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert history_lines[-1]["format"] == "html"
+
+    app = _build_web_ui_app(strix)
+    request = make_mocked_request("GET", "/api/messages", app=app)
+    handler = _get_route_handler(app, "/api/messages", "GET")
+    response = await handler(request)
+    assert response.status == 200
+    body = json.loads(response.text)
+    assert body["messages"][-1]["format"] == "html"
+
+
+def test_web_ui_renders_html_in_iframe(tmp_path: Path) -> None:
+    strix = DummyStrix(tmp_path / "atlas")
+
+    page = _render_web_ui_page(strix)
+
+    assert 'if (message.format === "html")' in page
+    assert 'document.createElement("iframe")' in page
+    assert 'frame.setAttribute("sandbox", "allow-same-origin");' in page
+    assert 'frame.setAttribute("srcdoc", message.content || "");' in page
+    assert "allow-scripts" not in page
+
+
+@pytest.mark.asyncio
 async def test_web_ui_uses_configured_display_name(tmp_path: Path) -> None:
     strix = DummyStrix(tmp_path / "atlas")
     strix.config.name = "Keel"

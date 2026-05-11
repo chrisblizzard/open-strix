@@ -353,8 +353,24 @@ class ToolsMixin:
             text: str,
             channel_id: str | None = None,
             attachment_paths: list[str] | None = None,
+            format: str = "markdown",
         ) -> str:
-            """Send a message to the current conversation or a specific channel with optional file attachments."""
+            """Send a message to the current conversation or a specific channel with optional file attachments.
+
+            format="markdown" sends normal markdown text. format="html" renders sandboxed HTML in the local web UI only.
+            """
+            if format not in {"markdown", "html"}:
+                self.log_event(
+                    "tool_call_error",
+                    tool="send_message",
+                    error_type="invalid_format",
+                    format=format,
+                )
+                return (
+                    "send_message failed: format must be either 'markdown' or 'html' "
+                    f"(got {format!r})."
+                )
+
             resolved_attachment_paths, attachment_names = self._resolve_send_message_attachments(
                 attachment_paths,
             )
@@ -372,6 +388,12 @@ class ToolsMixin:
             target_channel_id = channel_id or self.current_channel_id
             if target_channel_id is None:
                 return "No channel_id provided and no current event channel is available."
+            if format == "html" and not self.is_local_web_channel(target_channel_id):
+                return (
+                    "format='html' is only supported on the local web UI channel; "
+                    f"target channel {target_channel_id} is a Discord channel. Re-send with "
+                    "format='markdown'."
+                )
 
             similarity_basis = text
             if attachment_names:
@@ -454,6 +476,7 @@ class ToolsMixin:
                 text=text,
                 attachment_paths=resolved_attachment_paths,
                 attachment_names=attachment_names,
+                format=format,
             )
 
             self.log_event(
@@ -463,6 +486,7 @@ class ToolsMixin:
                 sent=sent,
                 chunks=sent_chunks,
                 attachment_names=attachment_names,
+                format=format,
                 git_sync="deferred",
                 message_id=sent_message_id,
                 text=text,
@@ -1621,6 +1645,10 @@ class ToolsMixin:
             list_messages,
             lookup,
             run_shell_tool,
+            read_file,
+            glob_files,
+            edit_file,
+            write_file,
             shell_jobs_list,
             shell_job_output,
             fetch_url,

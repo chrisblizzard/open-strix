@@ -122,6 +122,7 @@ class WebChatMixin:
         channel_id: str,
         text: str,
         attachment_names: list[str] | None = None,
+        format: str = "markdown",
     ) -> tuple[bool, str | None, int]:
         message_id = self._new_web_message_id()
         outbound_attachment_names = attachment_names or []
@@ -133,6 +134,7 @@ class WebChatMixin:
             message_id=message_id,
             is_bot=True,
             source="web",
+            format=format,
         )
         if self._current_turn_sent_messages is not None:
             self._current_turn_sent_messages.append((channel_id, message_id))
@@ -191,6 +193,7 @@ class WebChatMixin:
                     "is_bot": bool(row.get("is_bot")),
                     "source": row.get("source"),
                     "content": row.get("content", ""),
+                    "format": row.get("format", "markdown"),
                     "attachments": [
                         self._web_attachment_payload(str(path))
                         for path in attachments
@@ -548,6 +551,10 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
       .body {{
         line-height: 1.45;
         overflow-wrap: anywhere;
+      }}
+
+      .html-body {{
+        display: block;
       }}
 
       .body code {{ background: rgba(30,36,48,0.07); padding: 0.15em 0.4em; border-radius: 0.3em; font-family: ui-monospace, 'SF Mono', Monaco, monospace; font-size: 0.9em; }}
@@ -1252,7 +1259,28 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
         if (message.content) {{
           const body = document.createElement("div");
           body.className = "body";
-          body.innerHTML = simpleMarkdown(message.content);
+          if (message.format === "html") {{
+            const frame = document.createElement("iframe");
+            frame.className = "html-body";
+            frame.setAttribute("sandbox", "allow-same-origin");
+            frame.setAttribute("srcdoc", message.content || "");
+            frame.style.border = "none";
+            frame.style.width = "100%";
+            frame.style.minHeight = "120px";
+            frame.addEventListener("load", () => {{
+              try {{
+                const doc = frame.contentDocument;
+                if (doc && doc.body) {{
+                  frame.style.height = doc.body.scrollHeight + "px";
+                }}
+              }} catch (e) {{
+                // Cross-origin or sandbox lockdown: keep min height.
+              }}
+            }});
+            body.appendChild(frame);
+          }} else {{
+            body.innerHTML = simpleMarkdown(message.content);
+          }}
           article.appendChild(body);
         }}
 
@@ -1530,7 +1558,6 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
 """.format(
         agent_name=agent_name,
         agent_name_json=agent_name_json,
-        channel_id=strix.config.web_ui_channel_id,
         channel_id_json=channel_id_json,
     )
 

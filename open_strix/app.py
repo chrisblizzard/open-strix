@@ -443,6 +443,7 @@ class OpenStrixApp(DiscordMixin, SchedulerMixin, ToolsMixin, WebChatMixin):
                         ]
                         if isinstance(record.get("reactions"), list)
                         else [],
+                        format=str(record.get("format", "markdown")).strip() or "markdown",
                         persist=False,
                     )
                     continue
