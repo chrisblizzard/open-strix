@@ -357,7 +357,15 @@ class ToolsMixin:
         ) -> str:
             """Send a message to the current conversation or a specific channel with optional file attachments.
 
-            format="markdown" sends normal markdown text. format="html" renders sandboxed HTML in the local web UI only.
+            format="markdown" sends normal markdown text. format="html" renders sandboxed
+            HTML in the local web UI only (Discord channels reject html).
+
+            The web UI chat surface is light: the agent message bubble is approximately
+            rgba(255, 250, 241, 0.84) over a #efe4cf -> #f7f2e7 cream gradient. HTML
+            content renders directly on top of that cream background (the iframe itself
+            is transparent). Use dark text on the inherited cream OR paint your own
+            opaque html/body background so contrast is under your control. Light text on
+            the default cream is unreadable.
             """
             if format not in {"markdown", "html"}:
                 self.log_event(
