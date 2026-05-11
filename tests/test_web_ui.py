@@ -158,6 +158,19 @@ def test_web_ui_page_includes_status_css_classes(tmp_path: Path) -> None:
     assert "elapsed" in page
 
 
+def test_web_ui_html_message_bubble_uses_normal_message_width(tmp_path: Path) -> None:
+    strix = DummyStrix(tmp_path / "atlas")
+
+    page = _render_web_ui_page(strix)
+    selector = ".message:has(> .body > .html-body)"
+    rule_start = page.index(selector)
+    rule_end = page.index("}", rule_start)
+    rule = page[rule_start:rule_end]
+
+    assert ":has(> .body > .html-body)" in rule
+    assert "width: min(42rem, 92%)" in rule
+
+
 @pytest.mark.asyncio
 async def test_web_ui_message_flow_and_attachment_serving(tmp_path: Path) -> None:
     strix = DummyStrix(tmp_path)

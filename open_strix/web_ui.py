@@ -490,6 +490,10 @@ def _render_web_ui_page(strix: OpenStrixApp) -> str:
         align-self: flex-end;
       }}
 
+      .message:has(> .body > .html-body) {{
+        width: min(42rem, 92%);
+      }}
+
       .message.agent {{
         align-self: flex-start;
         background: var(--agent);
